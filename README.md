@@ -63,41 +63,7 @@ ECS allows citizens and taskforce agencies to coordinate emergencies in real tim
 - REST API for emergencies, mining, admin tools  
 - In-memory user DB (upgradeable to MongoDB)
 
----
-
-## 📦 Folder Structure
-
-📦 Emergency-Coordination-System
-│
-├── 📁 client
-│   ├── reactFN.js              # Entire React frontend (role flows, dashboard, forms)
-│   ├── index.html              # Entry point (if not using CRA)
-│   ├── styles.css              # Optional styling
-│   └── assets/                 # Logos, icons, images
-│
-├── 📁 server
-│   ├── app.py                  # Flask backend + blockchain engine + admin panel
-│   ├── auth_logic.py           # In-memory database (upgradeable to MongoDB)
-│   ├── database.py             # (Optional) MongoDB helper file (if implemented)
-│   ├── utils/
-│   │   └── __init__.py         # Utility modules (if needed)
-│   └── templates/
-│       └── admin_panel.html    # Admin Panel UI (served by Flask)
-│
-├── 📁 docs
-│   ├── README.md               # Full documentation
-│   ├── PROJECT_OVERVIEW.md     # Optional deeper explanation
-│   └── screenshots/            # Screenshots for GitHub preview
-│
-├── 📁 blockchain_data
-│   └── chain.json              # (Optional) Save blockchain to file
-│
-├── requirements.txt            # Python dependencies
-├── package.json                # Frontend dependencies (if using npm)
-├── .gitignore                  # Ignore unnecessary files
-└── LICENSE                     # License
-
-====================================================
+============================================================
 
 🚀 Installation & Setup Guide  
 This project uses Python (Flask) for the backend and React for the frontend.  
