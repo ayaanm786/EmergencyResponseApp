@@ -2,10 +2,15 @@ import time
 import hashlib
 import json
 import uuid
+import os
+import threading
+from datetime import datetime
 from urllib.parse import urlparse
 
 import requests
 import random
+import bcrypt
+import jwt
 from flask import Flask, jsonify, request, render_template_string
 from flask_cors import CORS
 
@@ -213,29 +218,200 @@ class Blockchain:
 
 # --- Part 2: Authentication Logic (from auth_logic.py) ---
 
-# --- User Database ---
-db = {
-    "citizens": [],
-    "taskforce": {
-        "paramedics": [],
-        "police": [],
-        "firefighters": []
-    },
-    "volunteers": [],
-    "admins": [
-        {
-            "id": "seed-admin-001",
-            "username": "ayaanm786",
-            "password": "786007",
-            "fullName": "Mohammed Ayaan Asfaq Malek",
-            "profession": "Admin"
-        }
-    ],
-}
+# --- JSON File Storage Setup ---
+USERS_DIR = "users"
+DATA_DIR = "data"
+
+# Create directories if they don't exist
+for directory in [USERS_DIR, DATA_DIR]:
+    os.makedirs(directory, exist_ok=True)
+
+# JWT Secret Key (in production, use environment variable)
+JWT_SECRET = "emergency_coordination_secret_key_2024"
+JWT_ALGORITHM = "HS256"
+
+
+# --- JSON File Storage Functions ---
+def load_users(role):
+    """Load users from JSON file based on role."""
+    role_map = {
+        "citizens": "citizens.json",
+        "volunteers": "volunteers.json",
+        "admins": "admins.json",
+        "paramedics": "taskforce.json",
+        "police": "taskforce.json",
+        "firefighters": "taskforce.json"
+    }
+
+    filename = role_map.get(role, f"{role}.json")
+    filepath = os.path.join(USERS_DIR, filename)
+
+    if not os.path.exists(filepath):
+        # Initialize with seed admin if admins.json doesn't exist
+        if role == "admins":
+            seed_admin = [{
+                "id": "seed-admin-001",
+                "username": "ayaanm786",
+                "password": bcrypt.hashpw("786007".encode(), bcrypt.gensalt()).decode(),
+                "fullName": "Mohammed Ayaan Asfaq Malek",
+                "profession": "Admin"
+            }]
+            save_users(role, seed_admin)
+            return seed_admin
+        return []
+
+    try:
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+            # Handle taskforce structure
+            if role in ["paramedics", "police", "firefighters"]:
+                return data.get(role, [])
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, IOError):
+        return []
+
+
+def save_users(role, data):
+    """Save users to JSON file based on role."""
+    role_map = {
+        "citizens": "citizens.json",
+        "volunteers": "volunteers.json",
+        "admins": "admins.json",
+        "paramedics": "taskforce.json",
+        "police": "taskforce.json",
+        "firefighters": "taskforce.json"
+    }
+
+    filename = role_map.get(role, f"{role}.json")
+    filepath = os.path.join(USERS_DIR, filename)
+
+    try:
+        # Handle taskforce structure
+        if role in ["paramedics", "police", "firefighters"]:
+            if os.path.exists(filepath):
+                with open(filepath, 'r') as f:
+                    taskforce_data = json.load(f)
+            else:
+                taskforce_data = {"paramedics": [], "police": [], "firefighters": []}
+            taskforce_data[role] = data
+            data = taskforce_data
+
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+        return True
+    except IOError:
+        return False
+
+
+def load_emergencies():
+    """Load emergencies from JSON file."""
+    # Ensure data directory exists
+    os.makedirs(DATA_DIR, exist_ok=True)
+    filepath = os.path.join(DATA_DIR, "emergencies.json")
+    if not os.path.exists(filepath):
+        return []
+    try:
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, IOError):
+        return []
+
+
+def save_emergency(emergency):
+    """Save emergency to JSON file."""
+    # Ensure data directory exists
+    os.makedirs(DATA_DIR, exist_ok=True)
+    filepath = os.path.join(DATA_DIR, "emergencies.json")
+    emergencies = load_emergencies()
+
+    # Only add ID and timestamp if not already present
+    if 'id' not in emergency:
+        emergency['id'] = str(uuid.uuid4())
+    if 'timestamp' not in emergency:
+        emergency['timestamp'] = time.time()
+
+    # Set mined to False if not already set (preserve existing mined status if updating)
+    if 'mined' not in emergency:
+        emergency['mined'] = False
+
+    # Check if emergency with this ID already exists (update) or add new
+    existing_index = None
+    for i, em in enumerate(emergencies):
+        if em.get('id') == emergency.get('id'):
+            existing_index = i
+            break
+
+    if existing_index is not None:
+        # Update existing emergency
+        emergencies[existing_index] = emergency
+    else:
+        # Append new emergency
+        emergencies.append(emergency)
+
+    try:
+        with open(filepath, 'w') as f:
+            json.dump(emergencies, f, indent=2)
+        return True
+    except IOError:
+        return False
+
+
+def mark_emergency_mined(emergency_id):
+    """Mark an emergency as mined."""
+    # Ensure data directory exists
+    os.makedirs(DATA_DIR, exist_ok=True)
+    filepath = os.path.join(DATA_DIR, "emergencies.json")
+    emergencies = load_emergencies()
+    for em in emergencies:
+        if em.get('id') == emergency_id:
+            em['mined'] = True
+            break
+    try:
+        with open(filepath, 'w') as f:
+            json.dump(emergencies, f, indent=2)
+        return True
+    except IOError:
+        return False
+
+
+def update_emergency(emergency_id, updates):
+    """Update an emergency in JSON file with provided updates."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    filepath = os.path.join(DATA_DIR, "emergencies.json")
+    emergencies = load_emergencies()
+    for em in emergencies:
+        if em.get('id') == emergency_id:
+            em.update(updates)
+            try:
+                with open(filepath, 'w') as f:
+                    json.dump(emergencies, f, indent=2)
+                return True, em
+            except IOError:
+                return False, None
+    return False, None
+
+
+# --- User Database (loaded from JSON) ---
+def _get_db():
+    """Get database structure from JSON files."""
+    return {
+        "citizens": load_users("citizens"),
+        "taskforce": {
+            "paramedics": load_users("paramedics"),
+            "police": load_users("police"),
+            "firefighters": load_users("firefighters")
+        },
+        "volunteers": load_users("volunteers"),
+        "admins": load_users("admins"),
+    }
+
+
+db = _get_db()
 
 
 # --- Database Helper Functions ---
-def _add_record(user_list, data):
+def _add_record(user_list, data, role=None):
     """
     Internal function to add a new user to a specific list.
     """
@@ -247,10 +423,14 @@ def _add_record(user_list, data):
         print(msg)
         return None, msg
     data['id'] = str(uuid.uuid4())
-    # --- SECURITY NOTE: HASH PASSWORD ---
-    # In a real app, hash the password. For this example, we store it plain.
-    # data['password'] = hashlib.sha256(data['password'].encode()).hexdigest()
+    # Hash password using bcrypt
+    data['password'] = bcrypt.hashpw(data['password'].encode(), bcrypt.gensalt()).decode()
     user_list.append(data)
+
+    # Save to JSON file if role is provided
+    if role:
+        save_users(role, user_list)
+
     print(f"Added: {data['username']} (ID: {data['id']})")
     return data, None
 
@@ -259,8 +439,11 @@ def _add_record(user_list, data):
 def find_user_by_username(username):
     """
     Finds a user and their category/list by their username.
+    Reloads from JSON files to ensure latest data.
     """
-    for category, users in db.items():
+    # Reload from JSON to get latest data
+    current_db = _get_db()
+    for category, users in current_db.items():
         if isinstance(users, list):
             for user in users:
                 if user.get('username') == username:
@@ -273,20 +456,39 @@ def find_user_by_username(username):
     return None, None, None
 
 
+def find_citizen_by_uid(uid):
+    """
+    Finds a citizen by their 12-digit UID.
+    """
+    citizens = load_users("citizens")
+    for citizen in citizens:
+        if citizen.get('uid') == uid:
+            return citizen
+    return None
+
+
 def delete_user_by_id(category, sub_category, record_id):
     """
     Deletes a user record by their unique ID.
     """
+    current_db = _get_db()
     target_list = None
-    if category == "taskforce" and sub_category in db["taskforce"]:
-        target_list = db["taskforce"][sub_category]
-    elif category in db and isinstance(db[category], list):
-        target_list = db[category]
+    role = None
+
+    if category == "taskforce" and sub_category in current_db["taskforce"]:
+        target_list = current_db["taskforce"][sub_category]
+        role = sub_category
+    elif category in current_db and isinstance(current_db[category], list):
+        target_list = current_db[category]
+        role = category
 
     if target_list:
         for i, record in enumerate(target_list):
             if record.get('id') == record_id:
                 del target_list[i]
+                # Save to JSON
+                if role:
+                    save_users(role, target_list)
                 print(f"Deleted record ID '{record_id}'")
                 return True, None
     return False, f"Error: Record ID '{record_id}' not found."
@@ -308,10 +510,22 @@ def update_user_record(username, data_to_update):
             return None, f"New username '{new_username}' already exists."
     is_taskforce = category_path and category_path.startswith('taskforce.')
     core_fields = {'username', 'password', 'fullName', 'profession'}
+
+    # Determine role for saving
+    if is_taskforce:
+        role = category_path.split('.')[1]
+    else:
+        role = category_path
+
     for field in core_fields:
         if field in data_to_update:
-            if field == 'password' and not data_to_update[field]: continue
-            user[field] = data_to_update[field]
+            if field == 'password' and data_to_update[field]:
+                # Hash new password
+                user[field] = bcrypt.hashpw(data_to_update[field].encode(), bcrypt.gensalt()).decode()
+            elif field == 'password' and not data_to_update[field]:
+                continue  # Skip if password is empty
+            else:
+                user[field] = data_to_update[field]
 
     # Use 'details' object ONLY for taskforce
     if is_taskforce:
@@ -324,34 +538,51 @@ def update_user_record(username, data_to_update):
         if field not in core_fields:
             details_target[field] = value
 
+    # Save to JSON
+    if role:
+        save_users(role, user_list)
+
     return user, None
 
 
 # --- Specific Add Functions (called by registration routes) ---
-def add_paramedic(data): return _add_record(db["taskforce"]["paramedics"], data)
+def add_paramedic(data):
+    current_db = _get_db()
+    return _add_record(current_db["taskforce"]["paramedics"], data, "paramedics")
 
 
-def add_police_officer(data): return _add_record(db["taskforce"]["police"], data)
+def add_police_officer(data):
+    current_db = _get_db()
+    return _add_record(current_db["taskforce"]["police"], data, "police")
 
 
-def add_firefighter(data): return _add_record(db["taskforce"]["firefighters"], data)
+def add_firefighter(data):
+    current_db = _get_db()
+    return _add_record(current_db["taskforce"]["firefighters"], data, "firefighters")
 
 
-def add_volunteer(data): return _add_record(db["volunteers"], data)
+def add_volunteer(data):
+    current_db = _get_db()
+    return _add_record(current_db["volunteers"], data, "volunteers")
 
 
-def add_admin(data): return _add_record(db["admins"], data)
+def add_admin(data):
+    current_db = _get_db()
+    return _add_record(current_db["admins"], data, "admins")
 
 
-def add_citizen(data): return _add_record(db["citizens"], data)
+def add_citizen(data):
+    current_db = _get_db()
+    return _add_record(current_db["citizens"], data, "citizens")
 
 
 # --- Functions for Admin Panel API ---
 def get_all_data():
     """
     Returns the entire user database for the admin panel.
+    Reloads from JSON to ensure latest data.
     """
-    return db
+    return _get_db()
 
 
 def admin_add_record(category, sub_category, data):
@@ -361,19 +592,23 @@ def admin_add_record(category, sub_category, data):
     record = None
     error_msg = None
     target_list = None
+    role = None
 
+    current_db = _get_db()
     if category == "taskforce" and sub_category:
-        if sub_category in db["taskforce"]:
-            target_list = db["taskforce"][sub_category]
+        if sub_category in current_db["taskforce"]:
+            target_list = current_db["taskforce"][sub_category]
+            role = sub_category
         else:
             error_msg = "Invalid taskforce subcategory"
-    elif category in db and isinstance(db[category], list):
-        target_list = db[category]
+    elif category in current_db and isinstance(current_db[category], list):
+        target_list = current_db[category]
+        role = category
     else:
         error_msg = "Invalid category"
 
     if target_list is not None:
-        record, error_msg = _add_record(target_list, data)
+        record, error_msg = _add_record(target_list, data, role)
     elif not error_msg:
         error_msg = "Target list not found"
 
@@ -388,11 +623,8 @@ CORS(app)
 # Instantiate the Blockchain
 blockchain = Blockchain()
 
-ADMIN_OTP_STORE = {
-    'username': None,
-    'code': None,
-    'expires_at': 0,
-}
+# --- Admin OTP Storage (with attempt tracking) ---
+ADMIN_OTP_STORE = {}  # {username: {'code': '123456', 'expires_at': timestamp, 'attempts': 0, 'used': False}}
 
 
 def _generate_admin_otp():
@@ -400,16 +632,54 @@ def _generate_admin_otp():
 
 
 # --- Part 4b: Admin OTP Utilities ---
-def _set_admin_otp(username, code, expires_at):
-    ADMIN_OTP_STORE['username'] = username
-    ADMIN_OTP_STORE['code'] = code
-    ADMIN_OTP_STORE['expires_at'] = expires_at
+def _set_admin_otp(username, code):
+    """Set OTP with 60 second expiry."""
+    ADMIN_OTP_STORE[username] = {
+        'code': code,
+        'expires_at': time.time() + 60,  # 60 seconds
+        'attempts': 0,
+        'used': False
+    }
 
 
-def _clear_admin_otp():
-    ADMIN_OTP_STORE['username'] = None
-    ADMIN_OTP_STORE['code'] = None
-    ADMIN_OTP_STORE['expires_at'] = 0
+def _clear_admin_otp(username):
+    """Clear OTP after use or expiry."""
+    if username in ADMIN_OTP_STORE:
+        del ADMIN_OTP_STORE[username]
+
+
+def _verify_admin_otp(username, otp):
+    """Verify OTP with attempt limit and expiry check."""
+    if username not in ADMIN_OTP_STORE:
+        return False, "No OTP found. Please request a new one."
+
+    otp_data = ADMIN_OTP_STORE[username]
+
+    # Check if already used
+    if otp_data['used']:
+        _clear_admin_otp(username)
+        return False, "OTP has already been used. Please request a new one."
+
+    # Check if expired
+    if time.time() > otp_data['expires_at']:
+        _clear_admin_otp(username)
+        return False, "OTP has expired. Please request a new one."
+
+    # Check attempt limit
+    if otp_data['attempts'] >= 3:
+        _clear_admin_otp(username)
+        return False, "Maximum attempts exceeded. Please request a new OTP."
+
+    # Verify code
+    if otp == otp_data['code']:
+        otp_data['used'] = True  # Mark as used
+        _clear_admin_otp(username)  # Clear after successful use
+        return True, "OTP verified successfully."
+
+    # Increment attempts
+    otp_data['attempts'] += 1
+    remaining = 3 - otp_data['attempts']
+    return False, f"Invalid OTP. {remaining} attempt(s) remaining."
 
 
 # --- Part 4: HTML Template for Admin UI ---
@@ -1006,6 +1276,48 @@ def register_taskforce_route():
     return jsonify({"status": "error", "message": error_msg or "Failed to register"}), 400
 
 
+@app.route('/citizen/check_uid', methods=['POST'])
+def check_citizen_uid():
+    """
+    Check if a citizen UID exists in the database.
+    If exists, return user data for auto-login.
+    If not, return exists: false to show registration form.
+    Adds a 2-second delay to simulate processing.
+    """
+    data = request.get_json()
+    uid = data.get('uid')
+
+    if not uid:
+        return jsonify({'status': 'error', 'message': 'UID is required.'}), 400
+
+    if not isinstance(uid, str) or len(uid) != 12 or not uid.isdigit():
+        return jsonify({'status': 'error', 'message': 'UID must be a 12-digit number.'}), 400
+
+    # Add 2-second delay to simulate processing
+    time.sleep(2)
+
+    citizen = find_citizen_by_uid(uid)
+
+    if citizen:
+        # Return citizen data (without password hash)
+        safe_citizen_data = {
+            'username': citizen.get('username'),
+            'fullName': citizen.get('fullName'),
+            'phone': citizen.get('phone'),
+            'address': citizen.get('address'),
+            'uid': citizen.get('uid'),
+            'details': citizen.get('details', {})
+        }
+        return jsonify({
+            'exists': True,
+            'user': safe_citizen_data
+        }), 200
+    else:
+        return jsonify({
+            'exists': False
+        }), 200
+
+
 @app.route('/register/citizen', methods=['POST'])
 def register_citizen_route():
     data = request.get_json()
@@ -1015,6 +1327,12 @@ def register_citizen_route():
     if 'details' in data and isinstance(data['details'], dict):
         details = data.pop('details')
         data.update(details)
+
+    # Ensure UID is included if provided
+    if 'uid' not in data or not data.get('uid'):
+        # If UID is in details, extract it
+        if 'uid' in data.get('details', {}):
+            data['uid'] = data['details'].pop('uid')
 
     record, error_msg = add_citizen(data)
     if record: return jsonify({"status": "success", "data": record}), 201
@@ -1045,8 +1363,8 @@ def login_route():
 
     user, category_path, _ = find_user_by_username(username)
 
-    if user and user.get('password') == password:  # UNSAFE password check
-
+    # Verify password using bcrypt
+    if user and bcrypt.checkpw(password.encode(), user.get('password', '').encode()):
         print(f"--- User '{username}' Logged In Successfully ({category_path}) ---")
 
         # Return only safe data to the frontend
@@ -1058,6 +1376,14 @@ def login_route():
         # Also return taskforce details if they exist
         if 'details' in user:
             safe_user_data['details'] = user.get('details')
+
+        # Generate JWT token for admin only
+        if category_path == 'admins':
+            token = jwt.encode({
+                'username': username,
+                'exp': datetime.utcnow().timestamp() + 3600  # 1 hour expiry
+            }, JWT_SECRET, algorithm=JWT_ALGORITHM)
+            safe_user_data['token'] = token
 
         return jsonify({
             'status': 'success',
@@ -1130,18 +1456,27 @@ def admin_request_otp():
         return jsonify({'status': 'error', 'message': 'Username and password are required.'}), 400
 
     user, category, _ = find_user_by_username(username)
-    if not user or category != 'admins' or user.get('password') != password:
+    if not user or category != 'admins':
+        return jsonify({'status': 'error', 'message': 'Invalid admin credentials.'}), 401
+
+    # Verify password using bcrypt
+    if not bcrypt.checkpw(password.encode(), user.get('password', '').encode()):
         return jsonify({'status': 'error', 'message': 'Invalid admin credentials.'}), 401
 
     otp_code = _generate_admin_otp()
-    _set_admin_otp(username, otp_code, time.time() + 300)  # 5 minute expiry
+    _set_admin_otp(username, otp_code)  # 60 second expiry
+
+    # Get expiry time for countdown timer (after setting OTP)
+    expires_at = ADMIN_OTP_STORE[username].get('expires_at', time.time() + 60)
 
     # NOTE: For demonstration we include the OTP in the response.
     # In production, send via email/SMS instead.
     return jsonify({
         'status': 'success',
-        'message': 'OTP generated successfully. It expires in 5 minutes.',
-        'otp_code': otp_code
+        'message': 'OTP generated successfully. It expires in 60 seconds.',
+        'otp_code': otp_code,
+        'expires_at': expires_at,
+        'remaining_time': 60
     }), 200
 
 
@@ -1149,6 +1484,7 @@ def admin_request_otp():
 def admin_verify_otp():
     """
     Verifies the admin OTP before providing panel access.
+    Returns remaining time for countdown timer.
     """
     values = request.get_json() or {}
     username = values.get('username')
@@ -1157,22 +1493,56 @@ def admin_verify_otp():
     if not username or not otp:
         return jsonify({'status': 'error', 'message': 'Username and OTP are required.'}), 400
 
-    stored_username = ADMIN_OTP_STORE.get('username')
-    stored_code = ADMIN_OTP_STORE.get('code')
-    expires_at = ADMIN_OTP_STORE.get('expires_at', 0)
+    success, message = _verify_admin_otp(username, otp)
 
-    if username != stored_username or stored_code is None:
-        return jsonify({'status': 'error', 'message': 'No active OTP session. Request a new code.'}), 400
+    # Calculate remaining time for countdown
+    remaining_time = 0
+    if username in ADMIN_OTP_STORE:
+        otp_data = ADMIN_OTP_STORE[username]
+        expires_at = otp_data.get('expires_at', 0)
+        remaining_time = max(0, int(expires_at - time.time()))
 
-    if time.time() > expires_at:
-        _clear_admin_otp()
-        return jsonify({'status': 'error', 'message': 'OTP has expired. Please request a new one.'}), 400
+    if success:
+        return jsonify({
+            'status': 'success',
+            'message': message,
+            'remaining_time': remaining_time
+        }), 200
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': message,
+            'remaining_time': remaining_time
+        }), 401
 
-    if otp != stored_code:
-        return jsonify({'status': 'error', 'message': 'Invalid OTP supplied.'}), 401
 
-    _clear_admin_otp()
-    return jsonify({'status': 'success', 'message': 'OTP verified. Access granted.'}), 200
+@app.route('/admin/otp/status', methods=['POST'])
+def admin_otp_status():
+    """
+    Returns remaining time for OTP countdown timer.
+    """
+    values = request.get_json() or {}
+    username = values.get('username')
+
+    if not username:
+        return jsonify({'status': 'error', 'message': 'Username is required.'}), 400
+
+    if username not in ADMIN_OTP_STORE:
+        return jsonify({
+            'status': 'error',
+            'message': 'No active OTP found.',
+            'remaining_time': 0
+        }), 404
+
+    otp_data = ADMIN_OTP_STORE[username]
+    expires_at = otp_data.get('expires_at', 0)
+    remaining_time = max(0, int(expires_at - time.time()))
+
+    return jsonify({
+        'status': 'success',
+        'remaining_time': remaining_time,
+        'expires_at': expires_at
+    }), 200
 
 
 @app.route('/mine', methods=['POST'])
@@ -1185,6 +1555,22 @@ def mine():
     proof = blockchain.proof_of_work(last_proof)
     previous_hash = blockchain.hash(last_block)
     block = blockchain.new_block(proof, previous_hash)
+
+    # Mark emergencies as mined
+    for emergency in block.get('emergencies', []):
+        # Find emergency by ID first, then fallback to sender+timestamp matching
+        emergency_id = emergency.get('id')
+        if emergency_id:
+            mark_emergency_mined(emergency_id)
+        else:
+            # Fallback: match by sender and timestamp
+            emergencies = load_emergencies()
+            for em in emergencies:
+                if (em.get('sender') == emergency.get('sender') and
+                        abs(em.get('timestamp', 0) - emergency.get('timestamp', 0)) < 1.0):
+                    mark_emergency_mined(em.get('id'))
+                    break
+
     response = {'message': "New Block Mined", **block}
     return jsonify(response), 200
 
@@ -1192,7 +1578,7 @@ def mine():
 @app.route('/emergencies/new', methods=['POST'])
 def new_emergency_report():
     """
-    Receives new emergency data from the frontend and returns the index of the block that will store it.
+    Receives new emergency data from the frontend and adds it to pending emergencies.
     """
     values = request.get_json()
     required = ['sender', 'details', 'location', 'resources']
@@ -1201,18 +1587,61 @@ def new_emergency_report():
     if not isinstance(values['location'], list) or len(values['location']) != 2:
         return 'Location must be a list of [latitude, longitude]', 400
 
-    # Add the emergency to the list of current emergencies
-    index = blockchain.new_emergency(
-        values['sender'],
-        values['details'],
-        values['location'],
-        values['resources']
-    )
+    # Create emergency data with unique ID and timestamp
+    emergency_id = str(uuid.uuid4())
+    emergency_timestamp = time.time()
+
+    emergency_data = {
+        'id': emergency_id,
+        'sender': values['sender'],
+        'details': values['details'],
+        'location': values['location'],
+        'resources': values['resources'],
+        'timestamp': emergency_timestamp,
+        'mined': False
+    }
+
+    # Save emergency to JSON file
+    save_emergency(emergency_data)
+
+    # Add the emergency to the list of current emergencies (pending queue)
+    emergency_for_blockchain = {
+        'id': emergency_id,
+        'sender': values['sender'],
+        'details': values['details'],
+        'location': values['location'],
+        'resources': values['resources'],
+        'timestamp': emergency_timestamp
+    }
+    blockchain.current_emergencies.append(emergency_for_blockchain)
+
+    # Return the index of the block that will hold this emergency
+    index = blockchain.last_block['index'] + 1
     response = {
         'message': f'Emergency report will be added to Block {index}',
         'block_index': index
     }
     return jsonify(response), 201
+
+
+@app.route('/emergencies/all', methods=['GET'])
+def get_all_emergencies():
+    """
+    Returns all emergencies (mined + unmined) for admin view.
+    """
+    emergencies = load_emergencies()
+    # Also include pending emergencies from blockchain
+    for em in blockchain.current_emergencies:
+        emergencies.append({
+            'id': str(uuid.uuid4()),
+            'sender': em.get('sender'),
+            'details': em.get('details'),
+            'location': em.get('location'),
+            'resources': em.get('resources'),
+            'timestamp': em.get('timestamp'),
+            'mined': False
+        })
+    return jsonify({'emergencies': emergencies}), 200
 
 
 @app.route('/chain', methods=['GET'])
@@ -1224,6 +1653,269 @@ def full_chain():
     return jsonify(response), 200
 
 
+@app.route('/nodes/list', methods=['GET'])
+def list_nodes():
+    """
+    Returns list of registered nodes.
+    """
+    return jsonify({
+        'nodes': sorted(list(blockchain.nodes)),
+        'count': len(blockchain.nodes)
+    }), 200
+
+
+@app.route('/nodes/sync', methods=['POST'])
+def sync_nodes():
+    """
+    Sync with all registered nodes and update chain if longer valid chain found.
+    """
+    replaced = blockchain.resolve_conflicts()
+    return jsonify({
+        'status': 'success',
+        'message': 'Chain replaced' if replaced else 'Chain is authoritative',
+        'chain_length': len(blockchain.chain),
+        'nodes_synced': len(blockchain.nodes)
+    }), 200
+
+
+# --- Taskforce Routes ---
+@app.route('/taskforce/emergencies', methods=['GET'])
+def taskforce_emergencies():
+    """Return active emergencies for taskforce members. Show all non-resolved emergencies."""
+    emergencies = load_emergencies()
+    active_emergencies = []
+
+    for em in emergencies:
+        # Include all emergencies that are not resolved (regardless of mined status)
+        status = em.get('status', 'pending')
+        if status != 'resolved':
+            # Determine responder type from resources
+            resources = em.get('resources', [])
+            if isinstance(resources, str):
+                resources = [resources]
+
+            responder_type = None
+            if any('police' in str(r).lower() for r in resources):
+                responder_type = 'Police'
+            elif any('paramedic' in str(r).lower() or 'medical' in str(r).lower() or 'ambulance' in str(r).lower() for r
+                     in resources):
+                responder_type = 'Paramedics'
+            elif any('fire' in str(r).lower() or 'firefighter' in str(r).lower() for r in resources):
+                responder_type = 'Firefighters'
+
+            # Return basic details without sensitive info
+            active_emergencies.append({
+                'id': em.get('id'),
+                'type': responder_type or 'General',
+                'location': em.get('location'),
+                'description': em.get('details'),
+                'requested_responders': resources,
+                'assigned_to': em.get('assigned_to'),
+                'status': status
+            })
+
+    return jsonify({'emergencies': active_emergencies}), 200
+
+
+@app.route('/taskforce/accept', methods=['POST'])
+def taskforce_accept():
+    """Taskforce member accepts an emergency."""
+    data = request.get_json()
+    username = data.get('username')
+    emergency_id = data.get('emergency_id')
+
+    if not username or not emergency_id:
+        return jsonify({'status': 'error', 'message': 'Username and emergency_id required'}), 400
+
+    success, emergency = update_emergency(emergency_id, {
+        'assigned_to': username,
+        'status': 'assigned'
+    })
+
+    if success:
+        return jsonify({'message': 'Accepted', 'id': emergency_id}), 200
+    else:
+        return jsonify({'status': 'error', 'message': 'Emergency not found'}), 404
+
+
+@app.route('/taskforce/resolve', methods=['POST'])
+def taskforce_resolve():
+    """Taskforce member marks emergency as resolved."""
+    data = request.get_json()
+    username = data.get('username')
+    emergency_id = data.get('emergency_id')
+
+    if not username or not emergency_id:
+        return jsonify({'status': 'error', 'message': 'Username and emergency_id required'}), 400
+
+    success, emergency = update_emergency(emergency_id, {
+        'status': 'resolved',
+        'resolved_by': username,
+        'resolved_at': time.time()
+    })
+
+    if success:
+        return jsonify({'message': 'Emergency resolved', 'id': emergency_id}), 200
+    else:
+        return jsonify({'status': 'error', 'message': 'Emergency not found'}), 404
+
+
+@app.route('/taskforce/history', methods=['GET'])
+def taskforce_history():
+    """Get assignment history for a taskforce member."""
+    username = request.args.get('username')
+    if not username:
+        return jsonify({'status': 'error', 'message': 'Username required'}), 400
+
+    emergencies = load_emergencies()
+    history = []
+
+    for em in emergencies:
+        if em.get('assigned_to') == username:
+            history.append({
+                'id': em.get('id'),
+                'type': em.get('type', 'General'),
+                'location': em.get('location'),
+                'description': em.get('details'),
+                'status': em.get('status'),
+                'resolved_at': em.get('resolved_at'),
+                'timestamp': em.get('timestamp')
+            })
+
+    return jsonify({'history': history}), 200
+
+
+# --- Volunteer Routes ---
+@app.route('/volunteer/emergencies', methods=['GET'])
+def volunteer_emergencies():
+    """Return public emergencies for volunteers (no sensitive data)."""
+    emergencies = load_emergencies()
+    public_emergencies = []
+
+    for em in emergencies:
+        # Extract city/area from location if available
+        location = em.get('location', [])
+        city = 'Unknown'
+        area = 'Unknown'
+        if isinstance(location, list) and len(location) >= 2:
+            # In a real app, you'd geocode lat/lng to get city/area
+            area = f"Lat: {location[0]:.4f}, Lng: {location[1]:.4f}"
+
+        # Determine type from resources
+        resources = em.get('resources', [])
+        emergency_type = 'General'
+        if any('fire' in str(r).lower() for r in resources):
+            emergency_type = 'Fire'
+        elif any('medical' in str(r).lower() or 'ambulance' in str(r).lower() for r in resources):
+            emergency_type = 'Medical'
+        elif any('police' in str(r).lower() for r in resources):
+            emergency_type = 'Police'
+
+        public_emergencies.append({
+            'id': em.get('id'),
+            'city': city,
+            'area': area,
+            'type': emergency_type,
+            'status': em.get('status', 'pending')
+        })
+
+    return jsonify({'emergencies': public_emergencies}), 200
+
+
+@app.route('/volunteer/support', methods=['POST'])
+def volunteer_support():
+    """Volunteer offers support for an emergency."""
+    data = request.get_json()
+    volunteer = data.get('volunteer')
+    emergency_id = data.get('emergency_id')
+
+    if not volunteer or not emergency_id:
+        return jsonify({'status': 'error', 'message': 'Volunteer name and emergency_id required'}), 400
+
+    emergencies = load_emergencies()
+    for em in emergencies:
+        if em.get('id') == emergency_id:
+            if 'volunteers' not in em:
+                em['volunteers'] = []
+            if volunteer not in em['volunteers']:
+                em['volunteers'].append(volunteer)
+
+            filepath = os.path.join(DATA_DIR, "emergencies.json")
+            try:
+                with open(filepath, 'w') as f:
+                    json.dump(emergencies, f, indent=2)
+                return jsonify({'message': 'Support offered', 'id': emergency_id}), 200
+            except IOError:
+                return jsonify({'status': 'error', 'message': 'Failed to save'}), 500
+
+    return jsonify({'status': 'error', 'message': 'Emergency not found'}), 404
+
+
+@app.route('/volunteer/update', methods=['POST'])
+def volunteer_update():
+    """Volunteer adds an update to an emergency."""
+    data = request.get_json()
+    emergency_id = data.get('emergency_id')
+    volunteer = data.get('volunteer')
+    text = data.get('text')
+
+    if not emergency_id or not volunteer or not text:
+        return jsonify({'status': 'error', 'message': 'emergency_id, volunteer, and text required'}), 400
+
+    emergencies = load_emergencies()
+    for em in emergencies:
+        if em.get('id') == emergency_id:
+            if 'volunteer_updates' not in em:
+                em['volunteer_updates'] = []
+
+            em['volunteer_updates'].append({
+                'volunteer': volunteer,
+                'text': text,
+                'timestamp': time.time()
+            })
+
+            filepath = os.path.join(DATA_DIR, "emergencies.json")
+            try:
+                with open(filepath, 'w') as f:
+                    json.dump(emergencies, f, indent=2)
+                return jsonify({'message': 'Update added', 'id': emergency_id}), 200
+            except IOError:
+                return jsonify({'status': 'error', 'message': 'Failed to save'}), 500
+
+    return jsonify({'status': 'error', 'message': 'Emergency not found'}), 404
+
+
+# --- Auto Mining (removed - now mines immediately on each emergency submission) ---
+# Blocks are now created automatically when each emergency is submitted
+# No background timer needed - one block per emergency report
+
+
+# --- JWT Verification Decorator ---
+def verify_jwt_token(f):
+    """Decorator to verify JWT token for admin routes."""
+    from functools import wraps
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'status': 'error', 'message': 'No token provided'}), 401
+
+        try:
+            if token.startswith('Bearer '):
+                token = token[7:]
+            decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            request.current_user = decoded.get('username')
+        except jwt.ExpiredSignatureError:
+            return jsonify({'status': 'error', 'message': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'status': 'error', 'message': 'Invalid token'}), 401
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
 # --- Part 8: Main Execution ---
 if __name__ == '__main__':
     print("--- Starting Emergency Hub MASTER Server (Single File) ---")
@@ -1231,5 +1923,31 @@ if __name__ == '__main__':
     print("Admin Panel: http://127.0.0.1:5000")
     print("API running on: http://127.0.0.1:5000")
     print("-------------------------------------------------")
+
+    # Load unmined emergencies from JSON and add to blockchain.current_emergencies
+    print("Loading emergencies from data/emergencies.json...")
+    saved_emergencies = load_emergencies()
+    unmined_count = 0
+    for em in saved_emergencies:
+        if not em.get('mined', False):
+            # Add to blockchain.current_emergencies if not already present
+            em_id = em.get('id')
+            if em_id:
+                # Check if already in current_emergencies by ID
+                already_exists = any(e.get('id') == em_id for e in blockchain.current_emergencies)
+                if not already_exists:
+                    # Create emergency dict for blockchain (without 'mined' field)
+                    emergency_for_blockchain = {
+                        'id': em.get('id'),
+                        'sender': em.get('sender'),
+                        'details': em.get('details'),
+                        'location': em.get('location'),
+                        'resources': em.get('resources'),
+                        'timestamp': em.get('timestamp')
+                    }
+                    blockchain.current_emergencies.append(emergency_for_blockchain)
+                    unmined_count += 1
+    print(f"✅ Loaded {unmined_count} unmined emergency(ies) into pending queue")
+
     # Run the app on the correct host for frontend access
     app.run(host='127.0.0.1', port=5000, debug=True)

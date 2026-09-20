@@ -1,0 +1,16 @@
+[
+  {
+    "username": "george",
+    "password": "$2b$12$STZYMsmC0zggAZqszyGPDu.9D7SDAqLzZvhVLmllwUsKqLr2tqlOK",
+    "fullName": "George Wash ington",
+    "profession": "Uber Driver",
+    "phone": "1234567891",
+    "altPhone": "9876543211",
+    "aadhar": "123123123123",
+    "graduation": "B.Tech",
+    "academy": "HARVARD",
+    "presentAddress": "Oxford street",
+    "permanentAddress": "Oxford street",
+    "id": "01eead3c-8f46-46e4-9338-34992977f5ad"
+  }
+]

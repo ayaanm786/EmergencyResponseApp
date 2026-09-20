@@ -1,0 +1,62 @@
+[
+  {
+    "username": "abc",
+    "password": "$2b$12$vLa5hz9zCNXO/TcbDvDKyeod573IlK1ewndAd0j.r7dnMK/JcPemy",
+    "fullName": "ABCD EFGH IJKL",
+    "profession": "Laddu eater",
+    "uid": "111111111111",
+    "phone": "1234567891",
+    "address": "DHOLAKPUR",
+    "phone1": "1234567891",
+    "phone2": "1987654321",
+    "gender": "Male",
+    "isPhysicallyDisabled": "No",
+    "disabilityDetails": "",
+    "id": "5ee6af8a-6bd8-4080-bd41-fab684668d36"
+  },
+  {
+    "username": "wasd",
+    "password": "$2b$12$IxB6E7AAvI2JfuvH4ERDSu5gLpP1xyJuISRdd/k6JGgEyiVHbxU6S",
+    "fullName": "qwerty efgh ghjk",
+    "profession": "govt worker",
+    "uid": "121111111111",
+    "phone": "1234567892",
+    "address": "bhawani mandi",
+    "phone1": "1234567892",
+    "phone2": "1987654322",
+    "gender": "Female",
+    "isPhysicallyDisabled": "No",
+    "disabilityDetails": "",
+    "id": "a265aec1-8841-4223-9b28-1c4a0e2af0cf"
+  },
+  {
+    "username": "asdw",
+    "password": "$2b$12$EHo217UF98ilXJPLQcbwqeYYlknGu.J6guuYb4R63bN/xEM9ooxpy",
+    "fullName": "lolll EFGH asdfg",
+    "profession": "baker",
+    "uid": "121212121212",
+    "phone": "1234561421",
+    "address": "oxford street",
+    "phone1": "1234561421",
+    "phone2": "1987654243",
+    "gender": "Female",
+    "isPhysicallyDisabled": "No",
+    "disabilityDetails": "",
+    "id": "02c8841e-3e0e-4d8a-b074-e78a07ac5530"
+  },
+  {
+    "username": "ghju",
+    "password": "$2b$12$7UqAsuxSTY8Lv50KukOT5ONUCn3oStFuWTGWod4OxXpU.KnaFnxeq",
+    "fullName": "ABCD EFGH IJKL",
+    "profession": "baker",
+    "uid": "454545454545",
+    "phone": "1234567891",
+    "address": "poland",
+    "phone1": "1234567891",
+    "phone2": "1987659274",
+    "gender": "Female",
+    "isPhysicallyDisabled": "No",
+    "disabilityDetails": "",
+    "id": "0447d523-7665-43d8-a082-e7f6a8a9fbae"
+  }
+]

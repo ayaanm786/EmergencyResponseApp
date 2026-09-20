@@ -1,0 +1,40 @@
+{
+  "paramedics": [],
+  "police": [
+    {
+      "username": "Singham",
+      "password": "$2b$12$MuSBNiJwGFQfnLYLYDmXr.axoJ3/ok0asn6Hcil5bXYO6VIJUW.HG",
+      "fullName": "singham",
+      "profession": "Police",
+      "details": {
+        "stationPosting": "DSP",
+        "rank": "Sergeant",
+        "graduationCourse": "BA IN Criminology",
+        "percentile12th": "95",
+        "academyName": "NCC",
+        "certificateDetails": "NA",
+        "presentAddress": "DHOLAKPUR",
+        "permanentAddress": "DHOLAKPUR"
+      },
+      "id": "5213d1fd-9803-4366-8403-55372ee37f56"
+    },
+    {
+      "username": "Singham Again",
+      "password": "$2b$12$1xF6lzVC/hYwQbXQd43vfOMlxZlzH5bVuYfWanR.yrF/7eWwI5Apa",
+      "fullName": "Singham Again",
+      "profession": "Police",
+      "details": {
+        "stationPosting": "DSP",
+        "rank": "Sergeant",
+        "graduationCourse": "BA IN Criminology",
+        "percentile12th": "89",
+        "academyName": "NCC",
+        "certificateDetails": "NA",
+        "presentAddress": "dholakpur",
+        "permanentAddress": "dholakpur"
+      },
+      "id": "553ea648-6aa1-48bb-bcaa-5038d6784683"
+    }
+  ],
+  "firefighters": []
+}

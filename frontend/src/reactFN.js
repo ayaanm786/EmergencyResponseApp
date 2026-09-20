@@ -256,18 +256,25 @@ const MinedBlockModal = ({ block, onClose }) => {
     const formattedTimestamp = block.timestamp ? new Date(block.timestamp * 1000).toLocaleString() : 'N/A';
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 px-4">
-            <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 px-4 backdrop-blur-sm">
+            <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-3xl max-h-[90vh] overflow-y-auto animate-fade-in-scale">
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
+                    className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 text-3xl leading-none font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition"
                     aria-label="Close mined block details"
                 >
                     &times;
                 </button>
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-                    Block #{block.index ?? 'N/A'} Mined
-                </h3>
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="bg-green-100 dark:bg-green-900 rounded-full p-3">
+                        <svg className="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <h3 className="text-3xl font-bold text-gray-900 dark:text-white">
+                        Block #{block.index ?? 'N/A'} Mined Successfully
+                    </h3>
+                </div>
                 <div className="bg-gray-100 dark:bg-gray-800 rounded-xl p-4 space-y-2 text-sm md:text-base">
                     <p><span className="font-semibold text-gray-700 dark:text-gray-300">Timestamp:</span> {formattedTimestamp}</p>
                     <p className="break-all"><span className="font-semibold text-gray-700 dark:text-gray-300">Hash:</span> {block.hash || 'N/A'}</p>
@@ -332,6 +339,8 @@ const AdminTwoFactor = ({ onBack }) => {
     const [statusType, setStatusType] = useState('info');
     const [isRequesting, setIsRequesting] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
+    const [remainingTime, setRemainingTime] = useState(0);
+    const [expiresAt, setExpiresAt] = useState(null);
 
     const resetState = () => {
         setUsername('');
@@ -341,6 +350,8 @@ const AdminTwoFactor = ({ onBack }) => {
         setOtpPreview('');
         setStatusMessage('');
         setStatusType('info');
+        setRemainingTime(0);
+        setExpiresAt(null);
     };
 
     const requestOtp = async () => {
@@ -363,6 +374,15 @@ const AdminTwoFactor = ({ onBack }) => {
                 setStatusMessage(data.message || 'OTP sent successfully.');
                 setStatusType('success');
                 setOtpPreview(data.otp_code || '');
+                // Set expiry time for countdown timer
+                if (data.expires_at) {
+                    setExpiresAt(data.expires_at);
+                    setRemainingTime(data.remaining_time || 60);
+                } else {
+                    // Fallback: calculate from current time + 60 seconds
+                    setExpiresAt(Date.now() / 1000 + 60);
+                    setRemainingTime(60);
+                }
             } else {
                 setStatusMessage(data.message || 'Unable to generate OTP.');
                 setStatusType('error');
@@ -375,6 +395,32 @@ const AdminTwoFactor = ({ onBack }) => {
             setIsRequesting(false);
         }
     };
+
+    // Countdown timer effect
+    useEffect(() => {
+        if (!otpSent || !expiresAt) return;
+
+        const updateTimer = () => {
+            const now = Date.now() / 1000; // Current time in seconds
+            const remaining = Math.max(0, Math.floor(expiresAt - now));
+            setRemainingTime(remaining);
+            
+            if (remaining <= 0) {
+                setOtpSent(false);
+                setStatusMessage('OTP has expired. Please request a new one.');
+                setStatusType('error');
+                setExpiresAt(null);
+            }
+        };
+
+        // Update immediately
+        updateTimer();
+
+        // Update every second
+        const interval = setInterval(updateTimer, 1000);
+
+        return () => clearInterval(interval);
+    }, [otpSent, expiresAt]);
 
     const verifyOtp = async () => {
         if (!otpSent) {
@@ -417,9 +463,22 @@ const AdminTwoFactor = ({ onBack }) => {
         }
     };
 
+    const handleLogout = () => {
+        localStorage.clear();
+        sessionStorage.clear();
+        resetState();
+        onBack();
+    };
+
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center justify-center p-6 relative">
             <BackButton onClick={() => { resetState(); onBack(); }} />
+            <button
+                onClick={handleLogout}
+                className="absolute top-6 right-6 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+            >
+                Logout
+            </button>
             <div className="w-full max-w-lg bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6">
                 <h1 className="text-3xl md:text-4xl font-extrabold text-center text-gray-800 dark:text-gray-100">
                     Admin Two-Factor Verification
@@ -481,9 +540,22 @@ const AdminTwoFactor = ({ onBack }) => {
                             Demo OTP (for testing): <span className="font-semibold">{otpPreview}</span>
                         </p>
                     )}
+                    {otpSent && remainingTime > 0 && (
+                        <div className="flex items-center justify-center space-x-2 text-sm">
+                            <span className="text-gray-600 dark:text-gray-400">Time remaining:</span>
+                            <span className={`font-bold text-lg ${remainingTime <= 10 ? 'text-red-600 dark:text-red-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                                {remainingTime}s
+                            </span>
+                        </div>
+                    )}
+                    {otpSent && remainingTime === 0 && (
+                        <p className="text-sm text-red-600 dark:text-red-400 text-center">
+                            OTP expired. Please request a new one.
+                        </p>
+                    )}
                     <button
                         onClick={verifyOtp}
-                        disabled={isVerifying}
+                        disabled={isVerifying || (otpSent && remainingTime === 0)}
                         className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white font-bold transition disabled:bg-emerald-400"
                     >
                         {isVerifying ? 'Verifying...' : 'Verify & Open Admin Panel'}
@@ -515,22 +587,56 @@ const VerifiedIcon = () => (
     </svg>
 );
 
-const CitizenVerificationPage = ({ onVerified, onBack }) => {
+const CitizenVerificationPage = ({ onVerified, onBack, onUidExists, onUidEntered }) => {
     const [uniqueNumber, setUniqueNumber] = useState('');
     const [status, setStatus] = useState('idle');
     const [error, setError] = useState('');
 
-    const handleVerify = () => {
+    const handleVerify = async () => {
         setError('');
         if (!/^\d{12}$/.test(uniqueNumber)) {
             setError('Please enter a valid 12-digit number.');
             return;
         }
         setStatus('verifying');
-        setTimeout(() => {
-            setStatus('verified');
-            // No auto-redirect, show success popup
-        }, 1500);
+        
+        // Store UID for registration form
+        if (onUidEntered) {
+            onUidEntered(uniqueNumber);
+        }
+        
+        try {
+            const response = await fetch(`${API_URL}/citizen/check_uid`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid: uniqueNumber })
+            });
+            
+            const result = await response.json();
+            
+            if (result.exists) {
+                // UID exists - skip registration and go directly to dashboard
+                setStatus('verified');
+                // Store user data if needed
+                if (onUidExists) {
+                    onUidExists(result.user);
+                }
+                // Auto-redirect to dashboard after a brief success message
+                setTimeout(() => {
+                    onVerified(true); // Pass true to indicate UID exists
+                }, 1000);
+            } else {
+                // UID does not exist - proceed to registration
+                setStatus('verified');
+                setTimeout(() => {
+                    onVerified(false); // Pass false to indicate UID doesn't exist
+                }, 1000);
+            }
+        } catch (err) {
+            console.error('UID check error:', err);
+            setError('Could not connect to the server. Please try again.');
+            setStatus('idle');
+        }
     };
 
     const handleClosePopup = () => {
@@ -575,11 +681,11 @@ const CitizenVerificationPage = ({ onVerified, onBack }) => {
     );
 };
 
-const CitizenProfileForm = ({ onProfileSubmit, onBack }) => {
+const CitizenProfileForm = ({ onProfileSubmit, onBack, uid }) => {
     const [profile, setProfile] = useState({
         username: '', password: '', // Add account fields
         firstName: '', middleName: '', lastName: '', phone1: '', phone2: '', address: '',
-        profession: '', gender: '', isPhysicallyDisabled: 'No', disabilityDetails: ''
+        profession: '', gender: '', isPhysicallyDisabled: 'No', disabilityDetails: '', uid: uid || ''
     });
     const [showSuccessPopup, setShowSuccessPopup] = useState(false);
 
@@ -596,6 +702,9 @@ const CitizenProfileForm = ({ onProfileSubmit, onBack }) => {
             password: profile.password,
             fullName: `${profile.firstName} ${profile.middleName || ''} ${profile.lastName}`.trim(),
             profession: 'Citizen',
+            uid: profile.uid || uid || '', // Include UID in registration
+            phone: profile.phone1 || '',
+            address: profile.address || '',
             details: { ...profile }
         };
         delete registrationData.details.username;
@@ -603,6 +712,7 @@ const CitizenProfileForm = ({ onProfileSubmit, onBack }) => {
         delete registrationData.details.firstName;
         delete registrationData.details.middleName;
         delete registrationData.details.lastName;
+        delete registrationData.details.uid; // UID is at top level
 
         try {
             const response = await fetch(`${API_URL}/register/citizen`, {
@@ -779,13 +889,36 @@ const DAppDashboard = ({ onBack, currentUser }) => {
     }, []);
 
     const handleInputChange = (e) => {
-        setFormData({ ...formData, [e.target.id]: e.target.value });
+        const field = e.target.id;
+        setFormData({ ...formData, [field]: e.target.value });
+        // Clear error for this field when user types
+        if (formErrors[field]) {
+            setFormErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors[field];
+                return newErrors;
+            });
+        }
     };
 
     const handleResponderSelect = (responder) => {
-        setSelectedResponders(prev =>
-            prev.includes(responder) ? prev : [...prev, responder]
-        );
+        setSelectedResponders(prev => {
+            if (prev.includes(responder)) {
+                // Remove if already selected
+                return prev.filter(r => r !== responder);
+            } else {
+                // Add if not selected
+                return [...prev, responder];
+            }
+        });
+        // Clear responder error when selection changes
+        if (formErrors.responders) {
+            setFormErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors.responders;
+                return newErrors;
+            });
+        }
     };
 
     const handleDisasterSelect = (disaster) => setFormData(prev => ({ ...prev, details: disaster }));
@@ -822,30 +955,74 @@ const DAppDashboard = ({ onBack, currentUser }) => {
         });
     };
 
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [formErrors, setFormErrors] = useState({});
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
+    const [pendingSubmission, setPendingSubmission] = useState(null);
+
+    const validateForm = () => {
+        const errors = {};
+        if (!formData.sender || formData.sender.trim() === '') {
+            errors.sender = 'Reporter name is required';
+        }
+        if (!formData.details || formData.details.trim() === '') {
+            errors.details = 'Emergency details are required';
+        }
+        if (!formData.country || formData.country.trim() === '') {
+            errors.country = 'Country is required';
+        }
+        if (!formData.state || formData.state.trim() === '') {
+            errors.state = 'State is required';
+        }
+        if (!formData.city || formData.city.trim() === '') {
+            errors.city = 'City is required';
+        }
+        if (!formData.area || formData.area.trim() === '') {
+            errors.area = 'Area is required';
+        }
+        if (selectedResponders.length === 0 && (!formData.additionalResources || formData.additionalResources.trim() === '')) {
+            errors.responders = 'Please select at least one responder or add additional resources';
+        }
+        setFormErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setStatusMessage('Processing...');
+        
+        if (!validateForm()) {
+            setStatusMessage('Please fix the errors in the form.');
+            return;
+        }
 
         const { sender, details, country, state, city, area, additionalResources } = formData;
         const address = `${area}, ${city}, ${state}, ${country}`;
 
-        if (!address.replace(/,/g, '').trim()) {
-            setStatusMessage('Please enter a location.');
-            return;
-        }
         if (!window.google || !window.google.maps.Geocoder) {
             setStatusMessage('Geocoding library not loaded. Check API Key.');
             return;
         }
 
+        // Show confirmation modal
+        setPendingSubmission({ sender, details, address, selectedResponders, additionalResources });
+        setShowConfirmModal(true);
+    };
+
+    const confirmSubmit = async () => {
+        setShowConfirmModal(false);
+        setIsSubmitting(true);
+        setStatusMessage('Processing...');
+
+        const { sender, details, selectedResponders, additionalResources, address } = pendingSubmission;
         const geocoder = new window.google.maps.Geocoder();
+        
         geocoder.geocode({ address }, async (results, status) => {
             if (status === 'OK' && results[0]) {
                 const location = results[0].geometry.location;
                 const resources = [...new Set([...selectedResponders, ...additionalResources.split(',').map(r => r.trim()).filter(Boolean)])];
 
                 try {
-                    const response = await fetch(`${API_URL}/emergencies/new`, { // Assuming backend has /emergencies/new
+                    const response = await fetch(`${API_URL}/emergencies/new`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -855,42 +1032,67 @@ const DAppDashboard = ({ onBack, currentUser }) => {
                             resources
                         })
                     });
-                    if (!response.ok) throw new Error('Failed to submit report');
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.message || 'Failed to submit report');
+                    }
 
                     const data = await response.json();
-                    setStatusMessage(data.message);
+                    setStatusMessage(`✅ ${data.message || 'Emergency report submitted successfully!'}`);
                     setLastSubmittedBlockIndex(
                         typeof data.block_index === 'number' ? data.block_index : null
                     );
                     setFormData(prev => ({ ...prev, country: '', state: '', city: '', area: '', details: '', additionalResources: '' }));
                     setSelectedResponders([]);
+                    setFormErrors({});
                     fetchChain(); // Refresh chain after submitting
                 } catch (error) {
                     console.error("Submission error:", error);
-                    setStatusMessage('Error submitting report.');
+                    setStatusMessage(`❌ Error: ${error.message || 'Failed to submit report. Please try again.'}`);
+                } finally {
+                    setIsSubmitting(false);
+                    setPendingSubmission(null);
                 }
             } else {
-                setStatusMessage('Geocoding failed: Location not found.');
+                setStatusMessage('❌ Geocoding failed: Location not found. Please check your address.');
+                setIsSubmitting(false);
             }
         });
     };
 
+    const [isMining, setIsMining] = useState(false);
+    const [showMineConfirm, setShowMineConfirm] = useState(false);
+
     const mineBlock = async () => {
-        setStatusMessage('Mining new block...');
+        // Check if there are pending emergencies by checking the chain
+        const pendingCount = chain.length > 0 ? (chain[chain.length - 1]?.emergencies?.length || 0) : 0;
+        // This is a simple check - in reality we'd need to check with the backend
+        setShowMineConfirm(true);
+    };
+
+    const confirmMine = async () => {
+        setShowMineConfirm(false);
+        setIsMining(true);
+        setStatusMessage('⏳ Mining new block...');
         try {
-            const response = await fetch(`${API_URL}/mine`, { method: 'POST' }); // Assuming backend has /mine
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const response = await fetch(`${API_URL}/mine`, { method: 'POST' });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+            }
             const data = await response.json();
-            setStatusMessage(data.message || 'New block mined.');
+            setStatusMessage(`✅ ${data.message || 'New block mined successfully!'}`);
             setMinedBlock(data);
             setShowMinedBlockModal(true);
             setLastSubmittedBlockIndex(null);
             fetchChain();
         } catch (error) {
             console.error("Mining error:", error);
-            setStatusMessage('Error mining block.');
+            setStatusMessage(`❌ Error: ${error.message || 'Failed to mine block. Please try again.'}`);
             setMinedBlock(null);
             setShowMinedBlockModal(false);
+        } finally {
+            setIsMining(false);
         }
     };
 
@@ -905,9 +1107,21 @@ const DAppDashboard = ({ onBack, currentUser }) => {
     const responderOptions = ["Police", "Paramedics", "Fire Brigade", "Disaster Response Team (NDRF/SDRF)", "Bomb Squad", "Coast Guard", "Mountain Rescue"];
 
 
+    const handleLogout = () => {
+        localStorage.clear();
+        sessionStorage.clear();
+        onBack();
+    };
+
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 p-8 font-sans relative">
             <BackButton onClick={onBack} />
+            <button
+                onClick={handleLogout}
+                className="absolute top-8 right-8 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm z-10"
+            >
+                Logout
+            </button>
             <div className="max-w-6xl mx-auto space-y-8">
                 <h1 className="text-5xl font-bold text-center dark:text-white">Emergency Coordination DApp</h1>
                 <p className="text-center text-xl dark:text-gray-300">Welcome, {currentUser?.fullName || 'User'} {currentUser?.profession ? `(${currentUser.profession})` : ''}</p>
@@ -918,7 +1132,7 @@ const DAppDashboard = ({ onBack, currentUser }) => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <SearchableDropdown title="Disaster" options={disasterOptions} onSelect={handleDisasterSelect} color="red" />
                         <SearchableDropdown title="Crimes & Attack" options={crimeOptions} onSelect={handleCrimeSelect} color="blue" />
-                        <SearchableDropdown title="Responder" options={responderOptions} onSelect={handleResponderSelect} isMultiSelect={true} color="green" />
+                        <SearchableDropdown title="Responder" options={responderOptions} onSelect={handleResponderSelect} isMultiSelect={true} color="green" selectedItems={selectedResponders} />
                     </div>
                 </div>
 
@@ -927,44 +1141,104 @@ const DAppDashboard = ({ onBack, currentUser }) => {
                     <form onSubmit={handleSubmit} className="space-y-4">
                          <div>
                             <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1 text-lg">Reporter Name</label>
-                            <input type="text" id="sender" value={formData.sender} onChange={handleInputChange} className="w-full p-3 border border-gray-300 dark:bg-gray-700 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 text-lg" />
+                            <input type="text" id="sender" value={formData.sender} onChange={handleInputChange} className={`w-full p-3 border ${formErrors.sender ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 text-lg`} />
+                            {formErrors.sender && <p className="text-red-500 text-sm mt-1">{formErrors.sender}</p>}
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1 text-lg">Country</label>
-                                <input type="text" id="country" value={formData.country} onChange={handleInputChange} className="w-full p-3 border border-gray-300 dark:bg-gray-700 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 text-lg" placeholder="e.g., India" />
+                                <input type="text" id="country" value={formData.country} onChange={handleInputChange} className={`w-full p-3 border ${formErrors.country ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 text-lg`} placeholder="e.g., India" />
+                                {formErrors.country && <p className="text-red-500 text-sm mt-1">{formErrors.country}</p>}
                             </div>
                              <div>
                                 <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1 text-lg">State</label>
-                                <input type="text" id="state" value={formData.state} onChange={handleInputChange} className="w-full p-3 border border-gray-300 dark:bg-gray-700 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 text-lg" placeholder="e.g., Gujarat" />
+                                <input type="text" id="state" value={formData.state} onChange={handleInputChange} className={`w-full p-3 border ${formErrors.state ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 text-lg`} placeholder="e.g., Gujarat" />
+                                {formErrors.state && <p className="text-red-500 text-sm mt-1">{formErrors.state}</p>}
                             </div>
                              <div>
                                 <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1 text-lg">City</label>
-                                <input type="text" id="city" value={formData.city} onChange={handleInputChange} className="w-full p-3 border border-gray-300 dark:bg-gray-700 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 text-lg" placeholder="e.g., Ahmedabad" />
+                                <input type="text" id="city" value={formData.city} onChange={handleInputChange} className={`w-full p-3 border ${formErrors.city ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 text-lg`} placeholder="e.g., Ahmedabad" />
+                                {formErrors.city && <p className="text-red-500 text-sm mt-1">{formErrors.city}</p>}
                             </div>
                              <div>
                                 <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1 text-lg">Area</label>
-                                <input type="text" id="area" value={formData.area} onChange={handleInputChange} className="w-full p-3 border border-gray-300 dark:bg-gray-700 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 text-lg" placeholder="e.g., Satellite" />
+                                <input type="text" id="area" value={formData.area} onChange={handleInputChange} className={`w-full p-3 border ${formErrors.area ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 text-lg`} placeholder="e.g., Satellite" />
+                                {formErrors.area && <p className="text-red-500 text-sm mt-1">{formErrors.area}</p>}
                             </div>
                         </div>
                          <div>
                             <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1 text-lg">Details (Select a type above or enter manually)</label>
-                            <textarea id="details" value={formData.details} onChange={handleInputChange} rows="3" className="w-full p-3 border border-gray-300 dark:bg-gray-700 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 text-lg" placeholder="e.g., 'Tornado damage, multiple injuries...'"></textarea>
+                            <textarea id="details" value={formData.details} onChange={handleInputChange} rows="3" className={`w-full p-3 border ${formErrors.details ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} dark:bg-gray-700 rounded-md focus:ring-2 focus:ring-blue-500 text-lg`} placeholder="e.g., 'Tornado damage, multiple injuries...'"></textarea>
+                            {formErrors.details && <p className="text-red-500 text-sm mt-1">{formErrors.details}</p>}
                         </div>
                         <div>
                             <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1 text-lg">Selected Responders</label>
-                            <textarea id="selected-responders" value={selectedResponders.join(', ')} rows="2" className="w-full p-3 border border-gray-300 dark:bg-gray-900 dark:border-gray-600 rounded-md bg-gray-100 text-lg" readOnly placeholder="Select responders from the dropdown above..."></textarea>
+                            <textarea id="selected-responders" value={selectedResponders.length > 0 ? selectedResponders.join(', ') : 'No responders selected'} rows="2" className={`w-full p-3 border ${formErrors.responders ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} dark:bg-gray-900 rounded-md bg-gray-100 text-lg`} readOnly placeholder="Select responders from the dropdown above..."></textarea>
+                            {formErrors.responders && <p className="text-red-500 text-sm mt-1">{formErrors.responders}</p>}
                         </div>
                         <div>
                             <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-1 text-lg">Additional Resources Needed (comma-separated)</label>
                             <input type="text" id="additionalResources" value={formData.additionalResources} onChange={handleInputChange} className="w-full p-3 border border-gray-300 dark:bg-gray-700 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 text-lg" placeholder="e.g., 'water, food, shelter'" />
                         </div>
-                        <button type="submit" className="btn w-full bg-red-500 text-white p-3 rounded-md font-bold hover:bg-red-600 text-xl">Submit Report</button>
+                        <button type="submit" disabled={isSubmitting} className="btn w-full bg-red-500 text-white p-3 rounded-md font-bold hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-xl flex items-center justify-center">
+                            {isSubmitting ? (
+                                <>
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Submitting...
+                                </>
+                            ) : 'Submit Report'}
+                        </button>
                     </form>
                 </div>
 
+                {/* Confirmation Modal */}
+                {showConfirmModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+                            <h3 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Confirm Emergency Submission</h3>
+                            <div className="space-y-2 mb-4 text-gray-700 dark:text-gray-300">
+                                <p><strong>Reporter:</strong> {pendingSubmission?.sender}</p>
+                                <p><strong>Details:</strong> {pendingSubmission?.details}</p>
+                                <p><strong>Location:</strong> {pendingSubmission?.address}</p>
+                                <p><strong>Responders:</strong> {pendingSubmission?.selectedResponders?.join(', ') || 'None'}</p>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={confirmSubmit} className="flex-1 bg-red-500 text-white py-2 px-4 rounded-md font-bold hover:bg-red-600">Confirm</button>
+                                <button onClick={() => { setShowConfirmModal(false); setPendingSubmission(null); }} className="flex-1 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-white py-2 px-4 rounded-md font-bold hover:bg-gray-400 dark:hover:bg-gray-500">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Mine Confirmation Modal */}
+                {showMineConfirm && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+                            <h3 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Confirm Block Mining</h3>
+                            <p className="mb-4 text-gray-700 dark:text-gray-300">Are you sure you want to mine a new block with all pending emergencies?</p>
+                            <div className="flex gap-3">
+                                <button onClick={confirmMine} className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-md font-bold hover:bg-blue-600">Confirm</button>
+                                <button onClick={() => setShowMineConfirm(false)} className="flex-1 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-white py-2 px-4 rounded-md font-bold hover:bg-gray-400 dark:hover:bg-gray-500">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 flex justify-around">
-                    <button onClick={mineBlock} className="btn bg-blue-500 text-white p-3 rounded-md font-bold hover:bg-blue-600 text-lg">Mine New Block</button>
+                    <button onClick={mineBlock} disabled={isMining} className="btn bg-blue-500 text-white p-3 rounded-md font-bold hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-lg flex items-center justify-center">
+                        {isMining ? (
+                            <>
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Mining...
+                            </>
+                        ) : 'Mine New Block'}
+                    </button>
                     <button onClick={() => updateMapMarkers(chain.flatMap(b => b.emergencies))} className="btn bg-yellow-500 text-white p-3 rounded-md font-bold hover:bg-yellow-600 text-lg">Refresh Map</button>
                     <button onClick={() => fetchChain(true)} className="btn bg-green-500 text-white p-3 rounded-md font-bold hover:bg-green-600 text-lg">View Blockchain</button>
                 </div>
@@ -1172,7 +1446,427 @@ const TaskforceLoginPage = ({ onLogin, onBack, onParamedicSelect, onPoliceSelect
     );
 };
 
-// ... (Rest of TaskforceDashboard, FeedbackPage, FaqPage) ...
+// --- Taskforce Dashboard ---
+const TaskforceDashboard = ({ currentUser, onBack }) => {
+    const [emergencies, setEmergencies] = useState([]);
+    const [history, setHistory] = useState([]);
+    const [showHistory, setShowHistory] = useState(false);
+    const [statusMessage, setStatusMessage] = useState('');
+
+    useEffect(() => {
+        fetchEmergencies();
+        fetchHistory();
+    }, []);
+
+    const fetchEmergencies = async () => {
+        try {
+            const response = await fetch(`${API_URL}/taskforce/emergencies`);
+            const data = await response.json();
+            setEmergencies(data.emergencies || []);
+        } catch (error) {
+            console.error('Error fetching emergencies:', error);
+            setStatusMessage('Failed to load emergencies');
+        }
+    };
+
+    const fetchHistory = async () => {
+        try {
+            const response = await fetch(`${API_URL}/taskforce/history?username=${currentUser?.username}`);
+            const data = await response.json();
+            setHistory(data.history || []);
+        } catch (error) {
+            console.error('Error fetching history:', error);
+        }
+    };
+
+    const handleAccept = async (emergencyId) => {
+        try {
+            const response = await fetch(`${API_URL}/taskforce/accept`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: currentUser?.username,
+                    emergency_id: emergencyId
+                })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setStatusMessage('Emergency accepted');
+                fetchEmergencies();
+                fetchHistory();
+            } else {
+                setStatusMessage(data.message || 'Failed to accept');
+            }
+        } catch (error) {
+            setStatusMessage('Error accepting emergency');
+        }
+    };
+
+    const handleResolve = async (emergencyId) => {
+        try {
+            const response = await fetch(`${API_URL}/taskforce/resolve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: currentUser?.username,
+                    emergency_id: emergencyId
+                })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setStatusMessage('Emergency marked as resolved');
+                fetchEmergencies();
+                fetchHistory();
+            } else {
+                setStatusMessage(data.message || 'Failed to resolve');
+            }
+        } catch (error) {
+            setStatusMessage('Error resolving emergency');
+        }
+    };
+
+    const handleLogout = () => {
+        localStorage.clear();
+        sessionStorage.clear();
+        onBack();
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 p-8 relative">
+            <BackButton onClick={onBack} />
+            <button
+                onClick={handleLogout}
+                className="absolute top-8 right-8 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+            >
+                Logout
+            </button>
+            <div className="max-w-6xl mx-auto">
+                <h1 className="text-4xl font-bold mb-4">Taskforce Dashboard</h1>
+                <p className="mb-6">Welcome, {currentUser?.fullName || currentUser?.username}</p>
+
+                <div className="mb-4">
+                    <button
+                        onClick={() => setShowHistory(!showHistory)}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                    >
+                        {showHistory ? 'Show Active Emergencies' : 'Show History'}
+                    </button>
+                </div>
+
+                {statusMessage && (
+                    <div className={`p-3 rounded mb-4 ${statusMessage.includes('Failed') || statusMessage.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                        {statusMessage}
+                    </div>
+                )}
+
+                {showHistory ? (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                        <h2 className="text-2xl font-bold mb-4">Assignment History</h2>
+                        {history.length === 0 ? (
+                            <p>No assignment history</p>
+                        ) : (
+                            <div className="space-y-4">
+                                {history.map((em) => (
+                                    <div key={em.id} className="border p-4 rounded">
+                                        <p><strong>Type:</strong> {em.type}</p>
+                                        <p><strong>Status:</strong> {em.status}</p>
+                                        <p><strong>Description:</strong> {em.description}</p>
+                                        <p><strong>Location:</strong> {Array.isArray(em.location) ? `${em.location[0]}, ${em.location[1]}` : em.location}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                        <h2 className="text-2xl font-bold mb-4">Active Emergencies</h2>
+                        {emergencies.length === 0 ? (
+                            <p>No active emergencies</p>
+                        ) : (
+                            <div className="space-y-4">
+                                {emergencies.map((em) => {
+                                    const isActive = em.status === 'pending' || em.status === 'assigned';
+                                    return (
+                                        <div key={em.id} className="border p-4 rounded flex items-start gap-3">
+                                            <div className={`w-3 h-3 rounded-full mt-1 ${isActive ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`} style={{ animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}></div>
+                                            <div className="flex-1">
+                                                <p><strong>Type:</strong> {em.type}</p>
+                                                <p><strong>Status:</strong> {em.status}</p>
+                                                <p><strong>Description:</strong> {em.description}</p>
+                                                <p><strong>Location:</strong> {Array.isArray(em.location) ? `${em.location[0]}, ${em.location[1]}` : em.location}</p>
+                                                <p><strong>Requested Responders:</strong> {Array.isArray(em.requested_responders) ? em.requested_responders.join(', ') : em.requested_responders}</p>
+                                                {em.assigned_to && <p><strong>Assigned to:</strong> {em.assigned_to}</p>}
+                                                <div className="mt-2 space-x-2">
+                                                    {em.status === 'pending' && (
+                                                        <button
+                                                            onClick={() => handleAccept(em.id)}
+                                                            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                                                        >
+                                                            Accept
+                                                        </button>
+                                                    )}
+                                                    {em.assigned_to === currentUser?.username && em.status === 'assigned' && (
+                                                        <button
+                                                            onClick={() => handleResolve(em.id)}
+                                                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                                        >
+                                                            Mark Resolved
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// --- Volunteer Login Page ---
+const VolunteerLoginPage = ({ onLogin, onBack, onRegister }) => {
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+
+    const handleLogin = async () => {
+        setError('');
+        if (!username || !password) {
+            setError("Username and password are required.");
+            return;
+        }
+        try {
+            const response = await fetch(`${API_URL}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const result = await response.json();
+            if (result.status === 'success') {
+                onLogin(result.user);
+            } else {
+                setError(result.message || 'Login failed.');
+            }
+        } catch (err) {
+            console.error("Login error:", err);
+            setError('Could not connect to the server.');
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 flex flex-col items-center justify-center p-4 font-sans relative">
+            <BackButton onClick={onBack} />
+            <div className="w-full max-w-md">
+                <div className="text-center mb-8">
+                    <h1 className="text-5xl font-extrabold">Volunteer Login</h1>
+                    <p className="text-gray-600 dark:text-gray-400 mt-2 text-lg">
+                        Log in to access the volunteer dashboard.
+                    </p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 space-y-6">
+                    <div>
+                        <label className="block text-lg font-bold text-gray-700 dark:text-gray-300 mb-1">Username</label>
+                        <input
+                            type="text"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            className="w-full text-xl p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500"
+                            placeholder="Enter your username"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-lg font-bold text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full text-xl p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500"
+                            placeholder="Enter your password"
+                        />
+                    </div>
+                    {error && <p className="text-red-500 text-center">{error}</p>}
+                    <button onClick={handleLogin} className="w-full py-4 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold text-xl transition duration-300">
+                        Log In
+                    </button>
+                    <div className="text-center space-y-2">
+                        {onRegister && (
+                            <button onClick={onRegister} className="text-indigo-500 hover:underline block w-full">
+                                Need to register?
+                            </button>
+                        )}
+                        <button onClick={onBack} className="text-gray-500 hover:underline text-sm block w-full">
+                            Back to Home
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Volunteer Dashboard ---
+const VolunteerDashboard = ({ currentUser, onBack }) => {
+    const [emergencies, setEmergencies] = useState([]);
+    const [selectedEmergency, setSelectedEmergency] = useState(null);
+    const [updateText, setUpdateText] = useState('');
+    const [statusMessage, setStatusMessage] = useState('');
+
+    useEffect(() => {
+        fetchEmergencies();
+    }, []);
+
+    const fetchEmergencies = async () => {
+        try {
+            const response = await fetch(`${API_URL}/volunteer/emergencies`);
+            const data = await response.json();
+            setEmergencies(data.emergencies || []);
+        } catch (error) {
+            console.error('Error fetching emergencies:', error);
+            setStatusMessage('Failed to load emergencies');
+        }
+    };
+
+    const handleSupport = async (emergencyId) => {
+        try {
+            const response = await fetch(`${API_URL}/volunteer/support`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    volunteer: currentUser?.username,
+                    emergency_id: emergencyId
+                })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setStatusMessage('Support offered successfully');
+                fetchEmergencies();
+            } else {
+                setStatusMessage(data.message || 'Failed to offer support');
+            }
+        } catch (error) {
+            setStatusMessage('Error offering support');
+        }
+    };
+
+    const handleUpdate = async () => {
+        if (!selectedEmergency || !updateText.trim()) {
+            setStatusMessage('Please select an emergency and enter an update');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_URL}/volunteer/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    emergency_id: selectedEmergency,
+                    volunteer: currentUser?.username,
+                    text: updateText
+                })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setStatusMessage('Update added successfully');
+                setUpdateText('');
+                setSelectedEmergency(null);
+                fetchEmergencies();
+            } else {
+                setStatusMessage(data.message || 'Failed to add update');
+            }
+        } catch (error) {
+            setStatusMessage('Error adding update');
+        }
+    };
+
+    const handleLogout = () => {
+        localStorage.clear();
+        sessionStorage.clear();
+        onBack();
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 p-8 relative">
+            <BackButton onClick={onBack} />
+            <button
+                onClick={handleLogout}
+                className="absolute top-8 right-8 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+            >
+                Logout
+            </button>
+            <div className="max-w-6xl mx-auto">
+                <h1 className="text-4xl font-bold mb-4">Volunteer Dashboard</h1>
+                <p className="mb-6">Welcome, {currentUser?.fullName || currentUser?.username}</p>
+
+                {statusMessage && (
+                    <div className={`p-3 rounded mb-4 ${statusMessage.includes('Failed') || statusMessage.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                        {statusMessage}
+                    </div>
+                )}
+
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                    <h2 className="text-2xl font-bold mb-4">Add Update</h2>
+                    <select
+                        value={selectedEmergency || ''}
+                        onChange={(e) => setSelectedEmergency(e.target.value)}
+                        className="w-full p-2 border rounded mb-2"
+                    >
+                        <option value="">Select an emergency</option>
+                        {emergencies.map((em) => (
+                            <option key={em.id} value={em.id}>{em.type} - {em.area}</option>
+                        ))}
+                    </select>
+                    <textarea
+                        value={updateText}
+                        onChange={(e) => setUpdateText(e.target.value)}
+                        placeholder="Enter your update..."
+                        className="w-full p-2 border rounded mb-2"
+                        rows="3"
+                    />
+                    <button
+                        onClick={handleUpdate}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                    >
+                        Add Update
+                    </button>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <h2 className="text-2xl font-bold mb-4">Public Emergencies</h2>
+                    {emergencies.length === 0 ? (
+                        <p>No emergencies available</p>
+                    ) : (
+                        <div className="space-y-4">
+                            {emergencies.map((em) => {
+                                const isActive = em.status === 'pending' || em.status === 'assigned';
+                                return (
+                                    <div key={em.id} className="border p-4 rounded flex items-start gap-3">
+                                        <div className={`w-3 h-3 rounded-full mt-1 ${isActive ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`} style={{ animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}></div>
+                                        <div className="flex-1">
+                                            <p><strong>Type:</strong> {em.type}</p>
+                                            <p><strong>Area:</strong> {em.area}</p>
+                                            <p><strong>City:</strong> {em.city}</p>
+                                            <p><strong>Status:</strong> {em.status}</p>
+                                            <button
+                                                onClick={() => handleSupport(em.id)}
+                                                className="mt-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                                            >
+                                                I Can Help
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- PARAMEDIC REGISTRATION ---
 const ParamedicRegistrationPage = ({ onRegister, onBack, name }) => {
@@ -2253,6 +2947,7 @@ export default function App() {
     const [showPopup, setShowPopup] = useState(false);
     const [taskforceName, setTaskforceName] = useState('');
     const [currentUser, setCurrentUser] = useState(null); // State for logged in user
+    const [citizenUid, setCitizenUid] = useState(''); // Store UID for registration
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -2286,7 +2981,7 @@ export default function App() {
                 setView('taskforceLogin');
                 break;
             case 'Volunteer':
-                setView('volunteerRegistration');
+                setView('volunteerLogin');
                 break;
             case 'Feedback':
                 setView('feedback');
@@ -2316,16 +3011,37 @@ export default function App() {
     }
 
     // --- Conditional Rendering Logic ---
-    if (view === 'verification') return <CitizenVerificationPage onVerified={() => setView('profileSetup')} onBack={resetView} />;
-    if (view === 'profileSetup') return <CitizenProfileForm onProfileSubmit={() => setView('dashboard')} onBack={resetView} />;
-    if (view === 'dashboard') return <DAppDashboard currentUser={null} onBack={resetView} />; // Render DApp for Citizen
+    if (view === 'verification') return <CitizenVerificationPage 
+        onVerified={(uidExists) => {
+            // If UID exists, go directly to dashboard; otherwise go to registration
+            if (uidExists) {
+                setView('dashboard');
+            } else {
+                setView('profileSetup');
+            }
+        }} 
+        onUidExists={(userData) => {
+            // Store user data if needed for dashboard
+            setCurrentUser(userData);
+            return true; // Signal that UID exists
+        }}
+        onBack={resetView}
+        onUidEntered={(uid) => {
+            // Store UID for registration form
+            setCitizenUid(uid);
+        }}
+    />;
+    if (view === 'profileSetup') return <CitizenProfileForm uid={citizenUid} onProfileSubmit={() => setView('dashboard')} onBack={resetView} />;
+    if (view === 'dashboard') return <DAppDashboard currentUser={currentUser} onBack={resetView} />; // Render DApp for Citizen
     if (view === 'adminTwoFactor') return <AdminTwoFactor onBack={resetView} />;
     if (view === 'taskforceLogin') return <TaskforceLoginPage onLogin={(user) => { setCurrentUser(user); setView('taskforceDashboard'); }} onBack={resetView} onParamedicSelect={(name) => { setTaskforceName(name); setView('paramedicRegistration'); }} onPoliceSelect={(name) => { setTaskforceName(name); setView('policeRegistration'); }} onFirefighterSelect={(name) => { setTaskforceName(name); setView('firefighterRegistration'); }}/>;
     if (view === 'paramedicRegistration') return <ParamedicRegistrationPage name={taskforceName} onRegister={handleSuccessfulRegistration} onBack={() => setView('taskforceLogin')} />;
     if (view === 'policeRegistration') return <PoliceRegistrationPage name={taskforceName} onRegister={handleSuccessfulRegistration} onBack={() => setView('taskforceLogin')} />;
     if (view === 'firefighterRegistration') return <FirefighterRegistrationPage name={taskforceName} onRegister={handleSuccessfulRegistration} onBack={() => setView('taskforceLogin')} />;
-    if (view === 'taskforceDashboard') return <DAppDashboard currentUser={currentUser} onBack={resetView} />; // Render DApp for Taskforce
-    if (view === 'volunteerRegistration') return <VolunteerRegistrationPage onRegister={resetView} onBack={resetView} />;
+    if (view === 'taskforceDashboard') return <TaskforceDashboard currentUser={currentUser} onBack={resetView} />;
+    if (view === 'volunteerLogin') return <VolunteerLoginPage onLogin={(user) => { setCurrentUser(user); setView('volunteerDashboard'); }} onBack={resetView} onRegister={() => setView('volunteerRegistration')} />;
+    if (view === 'volunteerDashboard') return <VolunteerDashboard currentUser={currentUser} onBack={resetView} />;
+    if (view === 'volunteerRegistration') return <VolunteerRegistrationPage onRegister={() => setView('volunteerLogin')} onBack={resetView} />;
     if (view === 'feedback') return <FeedbackPage onBack={resetView} />;
     if (view === 'faq') return <FaqPage onBack={resetView} />;
 
@@ -2467,11 +3183,22 @@ export default function App() {
 }
 
 // --- Helper Component for Searchable Dropdowns (for DAppDashboard) ---
-const SearchableDropdown = ({ title, options, onSelect, isMultiSelect = false, color = 'gray' }) => {
+const SearchableDropdown = ({ title, options, onSelect, isMultiSelect = false, color = 'gray', selectedItems = [] }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [label, setLabel] = useState(`Select ${title}`);
     const dropdownRef = useRef(null);
+    
+    // Update label for multi-select to show selected items
+    useEffect(() => {
+        if (isMultiSelect && selectedItems.length > 0) {
+            setLabel(`${selectedItems.length} selected`);
+        } else if (!isMultiSelect) {
+            // Keep current label for single select
+        } else {
+            setLabel(`Select ${title}`);
+        }
+    }, [selectedItems, isMultiSelect, title]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -2517,15 +3244,19 @@ const SearchableDropdown = ({ title, options, onSelect, isMultiSelect = false, c
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                     <ul className="dropdown-options">
-                        {filteredOptions.map(option => (
-                            <li
-                                key={option}
-                                className={`px-4 py-2 hover:bg-${color}-50 dark:hover:bg-gray-700 cursor-pointer text-lg`}
-                                onClick={() => handleSelect(option)}
-                            >
-                                {option}
-                            </li>
-                        ))}
+                        {filteredOptions.map(option => {
+                            const isSelected = isMultiSelect && selectedItems.includes(option);
+                            return (
+                                <li
+                                    key={option}
+                                    className={`px-4 py-2 hover:bg-${color}-50 dark:hover:bg-gray-700 cursor-pointer text-lg flex items-center justify-between ${isSelected ? 'bg-blue-100 dark:bg-blue-900' : ''}`}
+                                    onClick={() => handleSelect(option)}
+                                >
+                                    <span>{option}</span>
+                                    {isSelected && <span className="text-blue-600 dark:text-blue-400">✓</span>}
+                                </li>
+                            );
+                        })}
                     </ul>
                 </div>
             )}
